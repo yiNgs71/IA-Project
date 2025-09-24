@@ -1,9 +1,8 @@
-# IA-Project
+IA-Project
+This project is an AI agent that optimizes meal planning. Simply upload a photo of your ingredients, and the application, powered by Google Gemini, will give you a personalized meal plan, a shopping list, and recipes.
 
-Este proyecto es un agente de IA que optimiza la planificación de comidas . Solo sube una foto de tus ingredientes y la aplicación, impulsada por Google Gemini, te dará un plan de comidas personalizado, una lista de compras y recetas.
-
-Requisitos
-Asegúrate de tener instalado Python 3.7 o superior y las siguientes bibliotecas. Puedes instalarlas con pip:
+Requirements
+Make sure you have Python 3.7 or higher installed, along with the following libraries. You can install them with pip:
 
 Bash
 
@@ -11,18 +10,21 @@ pip install gradio
 pip install python-dotenv
 pip install Pillow
 pip install google-generativeai
+Setup
+To make the project work, you need a Google Gemini API key.
 
-Lo que necesitas para que el proyecto funcione, necesitas una clave de API de Google Gemini.
+Get your API key from Google AI Studio.
 
-Obtén tu clave de API en Google AI Studio.
+Create a file named .env in the main project folder.
 
-Crea un archivo llamado .env en la carpeta principal del proyecto.
+Inside the .env file, add your API key like this:
 
-Dentro del archivo .env, agrega tu clave de API de esta forma:
-GOOGLE_API_KEY='tu_clave_de_api'
+GOOGLE_API_KEY='your_api_key'
+How to Run the Project
+Save the gui.py and chefPersonal.py files in the same folder.
 
-Cómo ejecutar el proyecto
-Guarda los archivos gui.py y chefPersonal.py en la misma carpeta.
+Run the following command to start the application:
 
-Ejecuta el siguiente comando para iniciar la aplicación:
+Bash
+
 python gui.py
