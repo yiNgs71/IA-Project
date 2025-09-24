@@ -10,52 +10,60 @@ import google.generativeai as genai
 from google.api_core.exceptions import ResourceExhausted
 modelVersion = "gemini-2.0-flash"
 
+def _parse_json_from_markdown(text: str) -> Any:
+    """Extracts and parses JSON from markdown text."""
+    try:
+        json_match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1).strip()
+            return json.loads(json_str)
+        
+        json_match = re.search(r'\{.*\}', text, re.DOTALL)
+        if json_match:
+            return json.loads(json_match.group(0))
+        
+        return None
+    except (json.JSONDecodeError, AttributeError):
+        return None
+
 def retry_with_backoff(api_call_func, *args, **kwargs):
     """
-    Intenta una llamada a la API con reintentos exponenciales indefinidos.
+    Tries an API call with indefinite exponential retries.
     """
     delay = 2
     while True:
         try:
             return api_call_func(*args, **kwargs)
         except ResourceExhausted as e:
-            print(f"Servicio saturado. Reintentando en {delay} segundos...")
+            print(f"Service is busy. Retrying in {delay} seconds...")
             time.sleep(delay)
         except Exception as e:
             raise e
 
-def configurar_ia():
-    """Carga la clave de API y configura el cliente de Google GenAI."""
+def setup_ia():
+    """Loads the API key and sets up the Google GenAI client."""
     load_dotenv()
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
-        raise EnvironmentError("No se encontró la variable de entorno GOOGLE_API_KEY.")
+        raise EnvironmentError("The GOOGLE_API_KEY environment variable was not found.")
 
     genai.configure(api_key=api_key)
 
-def _parse_json_from_markdown(text: str) -> Any:
-    """Extrae y decodifica un bloque de código JSON de una cadena de texto."""
-    match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text, flags=re.IGNORECASE)
-    json_text = match.group(1) if match else text
-    try:
-        return json.loads(json_text)
-    except json.JSONDecodeError:
-        return {}
 
-def detectar_ingredientes_con_cantidades(ruta_imagen: str) -> List[Dict[str, Any]]:
-    """Analiza una imagen de alimentos y devuelve una lista de ingredientes detectados."""
-    if not os.path.exists(ruta_imagen):
-        raise FileNotFoundError(f"El archivo de imagen no se encontró en: {ruta_imagen}")
+def detect_ingredients_with_quantities(image_path: str) -> List[Dict[str, Any]]:
+    """Analyzes a food image and returns a list of detected ingredients."""
+    if not os.path.exists(image_path):
+        raise FileNotFoundError(f"The image file was not found at: {image_path}")
 
-    configurar_ia()
-    img = Image.open(ruta_imagen)
+    setup_ia()
+    img = Image.open(image_path)
     
     system_prompt = (
-        "Eres un experto en alimentos. Analiza la imagen para identificar todos los ingredientes. "
-        "Estima la cantidad de cada uno. "
-        "Devuelve la respuesta únicamente como una lista JSON de objetos. "
-        "Cada objeto debe tener una clave 'ingrediente' (string) y una clave 'cantidad' (un objeto con 'valor' y 'unidad'). "
-        "Ejemplo: [{\"ingrediente\": \"tomate\", \"cantidad\": {\"valor\": 2, \"unidad\": \"pieza\"}}]"
+        "You are a food expert. Analyze the image to identify all ingredients. "
+        "Estimate the amount of each one. "
+        "Return the response only as a JSON list of objects. "
+        "Each object must have a key 'ingredient' (string) and a key 'amount' (an object with 'value' and 'unit'). "
+        "Example: [{\"ingredient\": \"tomato\", \"amount\": {\"value\": 2, \"unit\": \"piece\"}}]"
     )
     
     model = genai.GenerativeModel(modelVersion)
@@ -68,34 +76,34 @@ def detectar_ingredientes_con_cantidades(ruta_imagen: str) -> List[Dict[str, Any
         parsed_response = _parse_json_from_markdown(response.text)
         return parsed_response if isinstance(parsed_response, list) else []
     except ResourceExhausted:
-        raise RuntimeError("El servicio está temporalmente saturado. Inténtalo de nuevo más tarde.")
+        raise RuntimeError("The service is temporarily busy. Please try again later.")
     except Exception as e:
-        raise RuntimeError(f"Ocurrió un error al detectar ingredientes: {e}")
+        raise RuntimeError(f"An error occurred while detecting ingredients: {e}")
 
-def generar_plan_y_requeridos(ingredientes_disponibles: List[Dict[str, Any]], preferencia_dietetica: str) -> Dict[str, Any]:
-    """Genera un plan de comidas y una lista de todos los ingredientes necesarios."""
-    configurar_ia()
-    ingredientes_str = ", ".join([item.get("ingrediente", "") for item in ingredientes_disponibles])
+def generate_plan_and_required(available_ingredients: List[Dict[str, Any]], dietary_preference: str) -> Dict[str, Any]:
+    """Generates a meal plan and a list of all required ingredients."""
+    setup_ia()
+    ingredients_str = ", ".join([item.get("ingredient", "") for item in available_ingredients])
 
     prompt = (
-        f"Preferencia dietética: {preferencia_dietetica}\n"
-        f"Ingredientes disponibles: {ingredientes_str}\n\n"
-        "**Tarea Principal: Generar un Plan de Comidas COMPLETO y VARIADO**\n"
-        "Puedes resumir cada comida para que sea mas corta pero que cumpla con 3 comidas para cada uno de los dias de la semana, sin resumir los dias repitiendo frases."
-        "1. **REGLA Maestra**: Debes crear un plan de comidas detallado, creativo y variado para los **7 días completos** de la semana (Lunes a Domingo).\n"
-        "2. **PROHIBICIONES CLAVE:**\n"
-        "   - **NO REPITAS COMIDAS:** Cada una de las 21 comidas debe ser una receta única y diferente. Está estrictamente prohibido repetir una comida de un día anterior o usar frases como '(Repetición del...)'.\n"
-        "   - **NO RESUMAS NI OMITAS DÍAS:** Debes generar la respuesta completa desde el Lunes hasta el Domingo sin interrupciones.\n"
-        "3. **FORMATO OBLIGATORIO PARA CADA COMIDA:**\n"
-        "   Para **cada una de las 21 comidas**, sin excepción, debes proporcionar la receta completa con todos estos detalles:\n"
-        "   - **Nombre del Platillo**\n"
-        "   - **Porciones**\n"
-        "   - **Información Nutricional (Estimada)**: Calorías, Proteínas, Carbohidratos, Grasas.\n"
-        "   - **Ingredientes**: Lista con cantidades.\n"
-        "**Tarea Secundaria (Al final de TODO):**\n"
-        "Después de generar el plan COMPLETO y VARIADO de 7 días, agrega un bloque de código JSON con la lista de TODOS los ingredientes necesarios. El formato es: \n"
+        f"Dietary preference: {dietary_preference}\n"
+        f"Available ingredients: {ingredients_str}\n\n"
+        "**Main Task: Generate a COMPLETE and VARIED Meal Plan**\n"
+        "You can summarize each meal to make it shorter but it must include 3 meals for each day of the week, without summarizing the days by repeating phrases."
+        "1. **Master Rule**: You must create a detailed, creative, and varied meal plan for the **7 full days** of the week (Monday to Sunday).\n"
+        "2. **KEY PROHIBITIONS:**\n"
+        "    - **DO NOT REPEAT MEALS:** Each of the 21 meals must be a unique and different recipe. It is strictly forbidden to repeat a meal from a previous day or use phrases like '(Repetition of...)'.\n"
+        "    - **DO NOT SUMMARIZE OR OMIT DAYS:** You must generate the complete response from Monday to Sunday without interruptions.\n"
+        "3. **MANDATORY FORMAT FOR EACH MEAL:**\n"
+        "    For **each of the 21 meals**, without exception, you must provide the complete recipe with all these details:\n"
+        "    - **Dish Name**\n"
+        "    - **Servings**\n"
+        "    - **Nutritional Information (Estimated)**: Calories, Proteins, Carbohydrates, Fats.\n"
+        "    - **Ingredients**: List with amounts.\n"
+        "**Secondary Task (At the end of EVERYTHING):**\n"
+        "After generating the COMPLETE and VARIED 7-day plan, add a JSON code block with the list of ALL necessary ingredients. The format is: \n"
         "```json\n"
-        "{\"ingredientes_requeridos\": [{\"ingrediente\": \"nombre\", \"cantidad\": \"ej. 2 unidades\"}, ...]}\n"
+        "{\"required_ingredients\": [{\"ingredient\": \"name\", \"amount\": \"e.g., 2 units\"}, ...]}\n"
         "```"
     )
 
@@ -109,47 +117,47 @@ def generar_plan_y_requeridos(ingredientes_disponibles: List[Dict[str, Any]], pr
         
         plan_markdown = full_text.split("```json")[0].strip()
         parsed_json = _parse_json_from_markdown(full_text)
-        ingredientes_requeridos = parsed_json.get("ingredientes_requeridos", []) if isinstance(parsed_json, dict) else []
+        required_ingredients = parsed_json.get("required_ingredients", []) if isinstance(parsed_json, dict) else []
 
         return {
             "plan_markdown": plan_markdown,
-            "ingredientes_requeridos": ingredientes_requeridos
+            "required_ingredients": required_ingredients
         }
     except ResourceExhausted:
-        raise RuntimeError("El servicio está temporalmente saturado.")
+        raise RuntimeError("The service is temporarily busy.")
     except Exception as e:
-        raise RuntimeError(f"Error al generar el plan de comidas: {e}")
+        raise RuntimeError(f"Error generating the meal plan: {e}")
 
-def crear_lista_de_compras(ingredientes_disponibles: List[Dict[str, Any]], ingredientes_requeridos: List[Dict[str, Any]]) -> str:
-    """Compara los ingredientes disponibles con los requeridos para generar una lista de compras."""
-    disponibles_set = {item['ingrediente'].lower().strip() for item in ingredientes_disponibles}
-    lista_compras = []
+def create_shopping_list(available_ingredients: List[Dict[str, Any]], required_ingredients: List[Dict[str, Any]]) -> str:
+    """Compares available ingredients with required ones to generate a shopping list."""
+    available_set = {item['ingredient'].lower().strip() for item in available_ingredients}
+    shopping_list = []
 
-    for requerido in ingredientes_requeridos:
-        nombre_requerido = requerido.get('ingrediente', '').lower().strip()
-        if nombre_requerido and nombre_requerido not in disponibles_set:
-            cantidad = requerido.get('cantidad', 'Cantidad no especificada')
-            lista_compras.append(f"- {nombre_requerido.capitalize()} ({cantidad})")
+    for required in required_ingredients:
+        required_name = required.get('ingredient', '').lower().strip()
+        if required_name and required_name not in available_set:
+            amount = required.get('amount', 'Amount not specified')
+            shopping_list.append(f"- {required_name.capitalize()} ({amount})")
 
-    if not lista_compras:
-        return "Parece que tienes todos los ingredientes necesarios."
+    if not shopping_list:
+        return "It seems you have all the necessary ingredients."
     
-    return "### Lista de Compras\n\n" + "\n".join(lista_compras)
+    return "### Shopping List\n\n" + "\n".join(shopping_list)
 
-def regenerar_comida(plan_actual: str, comida_a_cambiar: str, ingredientes_disponibles: List[Dict[str, Any]], preferencia: str) -> str:
-    """Regenera una única comida dentro de un plan de comidas existente."""
-    configurar_ia()
-    ingredientes_str = ", ".join([item.get("ingrediente", "") for item in ingredientes_disponibles])
+def regenerate_meal(current_plan: str, meal_to_change: str, available_ingredients: List[Dict[str, Any]], preference: str) -> str:
+    """Regenerates a single meal within an existing meal plan."""
+    setup_ia()
+    ingredients_str = ", ".join([item.get("ingredient", "") for item in available_ingredients])
 
     prompt = (
-        f"Tu tarea es regenerar una sola comida en un plan de comidas existente.\n"
-        f"Aquí está el plan de comidas completo actual:\n"
-        f"```\n{plan_actual}\n```\n\n"
-        f"La comida que debes cambiar es: '{comida_a_cambiar}'.\n"
-        f"Utiliza estos ingredientes: {ingredientes_str}\n"
-        f"Y ten en cuenta esta preferencia: {preferencia}\n\n"
-        f"Instrucción final: Devuelve únicamente el plan de comidas completo y actualizado en el mismo formato de texto original. Asegúrate de que todo el contenido del plan se mantenga igual, excepto por la receta de '{comida_a_cambiar}', que debe ser una nueva receta creativa.\n"
-        f"No añadas ningún texto adicional, encabezados, ni formato JSON. Simplemente devuelve el plan de comidas completo y actualizado."
+        f"Your task is to regenerate a single meal in an existing meal plan.\n"
+        f"Here is the current full meal plan:\n"
+        f"```\n{current_plan}\n```\n\n"
+        f"The meal you must change is: '{meal_to_change}'.\n"
+        f"Use these ingredients: {ingredients_str}\n"
+        f"And consider this preference: {preference}\n\n"
+        f"Final instruction: Return only the complete and updated meal plan in the same original text format. Make sure all the plan's content stays the same, except for the '{meal_to_change}' recipe, which must be a new creative recipe.\n"
+        f"Do not add any additional text, headers, or JSON format. Just return the complete, updated meal plan."
     )
     
     model = genai.GenerativeModel(modelVersion)
@@ -160,4 +168,4 @@ def regenerar_comida(plan_actual: str, comida_a_cambiar: str, ingredientes_dispo
         )
         return response.text
     except Exception as e:
-        raise RuntimeError(f"Error al regenerar la comida: {e}")
+        raise RuntimeError(f"Error regenerating the meal: {e}")
