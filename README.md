@@ -6,11 +6,12 @@ Make sure you have Python 3.7 or higher installed, along with the following libr
 
 Bash
 
-pip install gradio
-pip install python-dotenv
-pip install Pillow
-pip install google-generativeai
-Setup
+pip install gradio  
+pip install python-dotenv  
+pip install Pillow  
+pip install google-generativeai  
+Setup  
+
 To make the project work, you need a Google Gemini API key.
 
 Get your API key from Google AI Studio.
@@ -19,8 +20,8 @@ Create a file named .env in the main project folder.
 
 Inside the .env file, add your API key like this:
 
-GOOGLE_API_KEY='your_api_key'
-How to Run the Project
+GOOGLE_API_KEY='your_api_key'  
+How to Run the Project  
 Save the gui.py and chefPersonal.py files in the same folder.
 
 Run the following command to start the application:
